@@ -16,6 +16,8 @@ dependencies = [
     "pydantic>=2.9",
     "huggingface-hub>=0.26",
     "soundcard>=0.4.6",
+    "fastapi>=0.165.0",
+    "uvicorn>=0.54.0",
 ]
 
 [project.optional-dependencies]

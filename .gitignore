@@ -18,3 +18,8 @@ spike/audio/*
 # OS clutter
 Thumbs.db
 .DS_Store
+
+# Frontend
+app/frontend/node_modules/
+app/frontend/dist/
+

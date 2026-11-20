@@ -110,6 +110,9 @@ def main() -> int:
         segments = retranscribe(session, args.asr_model)
     if not segments:
         sys.exit("No speech found in this session.")
+    for i, s in enumerate(segments):
+        s["id"] = i
+    (session / "transcript.json").write_text(json.dumps(segments, indent=1, ensure_ascii=False), encoding="utf-8")
 
     # 1. transcript.md
     lines = [f"# Transcript: {meta['name']}", "",
@@ -139,6 +142,8 @@ def main() -> int:
             seg = locate(c.quote, segments)
             item = c.model_dump(mode="json") | {"grounding": score}
             item["time"] = stamp(seg["start"]) if seg else None
+            item["start"] = seg["start"] if seg else None
+            item["segment_id"] = seg["id"] if seg else None
             item["speaker"] = SPEAKER_NAMES.get(seg["source"], seg["source"]) if seg else c.speaker
             vague = sorted({w.group(0).lower() for w in VAGUE.finditer(c.statement + " " + c.quote)})
             item["flags"] = [f"vague wording: {', '.join(vague)}"] if vague else []

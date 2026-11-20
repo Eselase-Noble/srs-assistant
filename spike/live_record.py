@@ -237,6 +237,7 @@ def main() -> int:
     ap.add_argument("--prompt", default="Requirements interview in Ghana. Cedis, GH₵, Twi, mobile money, MoMo.")
     ap.add_argument("--consent", help="note of who consented to recording, stored with the session")
     ap.add_argument("--duration", type=int, help="stop automatically after N seconds")
+    ap.add_argument("--session-dir", type=Path, help="exact folder to record into (used by the app)")
     ap.add_argument("--list-devices", action="store_true")
     args = ap.parse_args()
 
@@ -245,9 +246,11 @@ def main() -> int:
         return 0
 
     started = datetime.now()
-    session_dir = SESSIONS_DIR / f"{started:%Y-%m-%d_%H%M%S}_{args.name}"
+    session_dir = args.session_dir or SESSIONS_DIR / f"{started:%Y-%m-%d_%H%M%S}_{args.name}"
     chunk_dir = session_dir / "chunks"
-    chunk_dir.mkdir(parents=True)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    stop_file = session_dir / "STOP"          # the app creates this file to stop the recording
+    status_file = session_dir / "live_status.json"
 
     sources = get_sources(args.source, args.mic, args.speaker)
     meta = {"name": args.name, "started": started.isoformat(timespec="seconds"),
@@ -282,8 +285,11 @@ def main() -> int:
     try:
         while any(r.is_alive() for r in recorders):
             seconds = (datetime.now() - started).total_seconds()
-            if args.duration and seconds >= args.duration:
+            if (args.duration and seconds >= args.duration) or stop_file.exists():
                 break
+            status_file.write_text(json.dumps({"elapsed_s": round(seconds, 1), "state": "recording",
+                                               "levels": {r.label: round(r.level, 4) for r in recorders}}),
+                                   encoding="utf-8")
             elapsed = timedelta(seconds=int(seconds))
             meters = "  ".join(f"{r.label} {'█' * min(10, int(r.level * 200)):<10}" for r in recorders)
             sys.stdout.write(f"\r   {elapsed}  {meters}")
@@ -296,6 +302,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     print("\n\n■ Stopping ...")
+    status_file.write_text(json.dumps({"state": "finishing"}), encoding="utf-8")
     stop.set()
     for r in recorders:
         r.join(timeout=5)
@@ -317,6 +324,8 @@ def main() -> int:
                 duration_s=round((datetime.now() - started).total_seconds(), 1),
                 files=[p.name for p in produced] + (["mixed.wav"] if produced else []))
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    status_file.write_text(json.dumps({"state": "done"}), encoding="utf-8")
+    stop_file.unlink(missing_ok=True)
     print(f"   Saved: {', '.join(meta['files'])}")
     if transcriber:
         print(f"   Live transcript: {session_dir / 'transcript_live.md'}")
