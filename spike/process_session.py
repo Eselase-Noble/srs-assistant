@@ -45,6 +45,7 @@ TYPE_TITLES = [
 ]
 VOCAB = ("Requirements meeting in Ghana about daily business operations. Cedis, GH₵, mobile money, MoMo, "
          "Excel, WhatsApp, invoice, stock, inventory, receipt, branch, manager, accountant.")
+HOTWORDS = ""  # the session's key words, boosted during decoding (set from session.json)
 
 
 def step(progress: float, message: str) -> None:
@@ -96,6 +97,30 @@ def rms(audio: np.ndarray, start: float, end: float) -> float:
     return float(np.sqrt(np.mean(part ** 2))) if len(part) else 0.0
 
 
+def redecode(model, audio: np.ndarray, row: dict, context: str) -> dict | None:
+    """Decode one unclear line again in isolation. Returns the new text and words if clearly better."""
+    pad = 0.3
+    start = max(0.0, row["start"] - pad)
+    piece = audio[int(start * 16000):int((row["end"] + pad) * 16000)]
+    if len(piece) < 8000:
+        return None
+    segs, _ = model.transcribe(
+        piece, language="en", beam_size=10, best_of=5, temperature=0.0, word_timestamps=True,
+        vad_filter=False, condition_on_previous_text=False, without_timestamps=False,
+        initial_prompt=(VOCAB + " " + context).strip()[-800:], hotwords=HOTWORDS or None,
+    )
+    segs = list(segs)
+    words = [{"w": w.word, "s": round(start + w.start, 2), "e": round(start + w.end, 2), "p": round(w.probability, 2)}
+             for s in segs for w in (s.words or [])]
+    text = " ".join(s.text.strip() for s in segs).strip()
+    if not words or not text:
+        return None
+    conf = float(np.mean([w["p"] for w in words]))
+    if conf < row["confidence"] + 0.05:
+        return None
+    return {"text": text, "words": words, "confidence": round(conf, 2), "redecoded": True}
+
+
 def transcribe(session: Path, model_name: str, threads: int, share: float, denoise: bool = True) -> list[dict]:
     """Accurate pass over the full recording: noise clean up, strict speech detection, large model,
     beam search, context carried across the file, word timestamps with confidence, and filters that
@@ -125,7 +150,7 @@ def transcribe(session: Path, model_name: str, threads: int, share: float, denoi
             vad_filter=True,
             vad_parameters={"threshold": 0.55, "min_speech_duration_ms": 300,
                             "min_silence_duration_ms": 500, "speech_pad_ms": 300},
-            condition_on_previous_text=True, initial_prompt=VOCAB,
+            condition_on_previous_text=True, initial_prompt=VOCAB, hotwords=HOTWORDS or None,
             compression_ratio_threshold=2.2, log_prob_threshold=-1.0, no_speech_threshold=0.6,
             hallucination_silence_threshold=2.0,
         )
@@ -153,6 +178,25 @@ def transcribe(session: Path, model_name: str, threads: int, share: float, denoi
                 last_report = minute
                 frac = (done_before + s.end) / total
                 step(share * frac, f"Transcribing {name} audio, {stamp(s.end)} of {stamp(len(raw) / 16000)}")
+        # Second pass: lines the model was unsure of are decoded again on their own, with a wider beam
+        # and the preceding sentence as context. The better reading wins; unclear lines can be rescued.
+        retry = [r for r in kept if r["confidence"] < 0.65 and r["end"] - r["start"] >= 1.0]
+        retry += [r for r in dropped if r.get("reason") == "mostly unclear words" and r["source"] == source
+                  and r["end"] - r["start"] >= 1.0]
+        for i, r in enumerate(retry[:400]):
+            if i % 10 == 0:
+                step(share * (done_before + len(raw) / 16000) / total,
+                     f"Checking unclear passages again, {i + 1} of {min(len(retry), 400)}")
+            context = " ".join(k["text"] for k in kept if k["end"] <= r["start"])[-200:]
+            better = redecode(model, audio, r, context)
+            if better is None:
+                continue
+            if r in dropped and better["confidence"] >= 0.5:
+                dropped.remove(r)
+                r.pop("reason", None)
+                kept.append(r)
+            r.update(better)
+        kept.sort(key=lambda r: r["start"])
         # Background talk: much quieter than the main conversation in this track
         if kept:
             typical = float(np.median([r["level"] for r in kept]))
@@ -173,24 +217,52 @@ def transcribe(session: Path, model_name: str, threads: int, share: float, denoi
 
 
 # ============================================================================== 2. paragraphs
-FILLERS = re.compile(r"(?<![\w'])(?:um+|uh+|erm+|hmm+|mm+)(?![\w'])[,.]?\s*", re.IGNORECASE)
-REPEATS = re.compile(r"\b(\w+)(\s+\1\b)+", re.IGNORECASE)
+# a filler sound together with the commas around it: "challenges, uh, that" -> "challenges that"
+FILLERS = re.compile(r"(?:,\s*)?(?<![\w'-])(?:mm-hmm|uh-huh|um+|uh+|erm+|er|ah+|hmm+|mm+|mhm)(?![\w'-])[,.]?\s*",
+                     re.IGNORECASE)
+# the same 1 to 4 word phrase said two or more times in a row: "we we we", "so that, so that"
+REPEATS = re.compile(r"\b((?:\w+[\s,]+){0,3}\w+)(?:[\s,]+\1\b)+", re.IGNORECASE)
+FALSE_START = re.compile(r"\b(\w+)-\s+(?=\w)")          # "the- the system" -> "the system"
+LEADING_JUNK = re.compile(r"^(?:(?:so|and|but|okay|ok|yeah|right|well|now)[,.]?\s+){2,}", re.IGNORECASE)
+ACKS = {"okay", "ok", "yes", "yeah", "yep", "right", "alright", "all right", "mm-hmm", "uh-huh", "sure",
+        "i see", "oh", "ah", "hmm", "mm", "no", "fine", "good", "great", "thank you", "thanks", "exactly",
+        "true", "correct", "ok ok", "okay okay"}
 
 
 def clean(text: str) -> str:
-    """Light clean read: drop filler sounds and stuttered repeats, tidy spaces. Meaning is untouched."""
-    text = FILLERS.sub("", text)
-    text = REPEATS.sub(r"\1", text)
+    """Clean read: drop filler sounds, stutters, false starts and repeated phrases, tidy punctuation.
+    The words that carry meaning are never changed here."""
+    text = FILLERS.sub(" ", text)
+    text = FALSE_START.sub("", text)
+    for _ in range(2):
+        text = REPEATS.sub(r"\1", text)
+    text = LEADING_JUNK.sub(lambda m: m.group(0).split()[0].rstrip(",.") + " ", text)
     text = re.sub(r"\s+([,.?!])", r"\1", text)
-    text = re.sub(r"\s{2,}", " ", text).strip()
-    return text[:1].upper() + text[1:] if text else text
+    text = re.sub(r"([,.?!])\1+", r"\1", text)
+    text = re.sub(r",\s*([.?!])", r"\1", text)
+    ending = text.rstrip()[-1:] if text.rstrip()[-1:] in ".?!" else ""
+    text = re.sub(r"\s{2,}", " ", text).strip(" ,-")
+    if not re.search(r"\w", text):
+        return ""
+    if ending and text[-1] not in ".?!":
+        text += ending
+    return text[:1].upper() + text[1:]
+
+
+def is_ack(text: str) -> bool:
+    return text.lower().strip(" .,!?") in ACKS
 
 
 def build_paragraphs(segments: list[dict], max_words: int = 140, gap: float = 2.5) -> list[dict]:
+    """Group lines into readable paragraphs. Lone acknowledgements ("okay", "mm-hmm") are left out of
+    the reading view unless they answer a question; they stay in the timed transcript."""
     paras: list[dict] = []
-    for s in segments:
+    for i, s in enumerate(segments):
         text = clean(s["text"])
         if not text:
+            continue
+        prev = segments[i - 1]["text"].rstrip() if i else ""
+        if is_ack(text) and not prev.endswith("?"):
             continue
         cur = paras[-1] if paras else None
         words = len(cur["text"].split()) if cur else 0
@@ -204,6 +276,92 @@ def build_paragraphs(segments: list[dict], max_words: int = 140, gap: float = 2.
             paras.append({"id": len(paras), "source": s["source"], "start": s["start"], "end": s["end"],
                           "text": text, "segment_ids": [s["id"]]})
     return paras
+
+
+# ============================================================================== 2b. polished transcript
+class PolishedParagraph(BaseModel):
+    id: int
+    text: str
+
+
+class PolishedBatch(BaseModel):
+    paragraphs: list[PolishedParagraph]
+
+
+POLISH_SYSTEM = """You are an experienced transcript editor preparing an interview transcript for a report.
+You receive paragraphs produced by speech recognition. For each paragraph, return a clean version:
+- fix punctuation, capitalisation and sentence boundaries
+- remove filler words, false starts, stutters and repeated phrases
+- correct words that were clearly misheard, using the context and the key words given
+  (for example "the photo must be opened" in a records office means "the folder must be opened")
+- keep the speaker's own words, meaning, facts, numbers, names and order. Do not summarise, shorten
+  ideas, add explanations, or add anything that was not said
+- if a passage is unintelligible, keep it as it is
+Return every paragraph with its id, in the same order."""
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", text.lower())
+
+
+def polish_is_safe(original: str, polished: str) -> bool:
+    """Reject rewrites that drift from what was said: too different, too short or long, or new numbers."""
+    from difflib import SequenceMatcher
+
+    a, b = _words(original), _words(polished)
+    if not b or not a:
+        return False
+    if not 0.55 <= len(b) / len(a) <= 1.15:
+        return False
+    if set(re.findall(r"\d+", polished)) - set(re.findall(r"\d+", original)):
+        # allow numbers written out as digits ("seventy two" -> 72) only if the words were there
+        spelled = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "twelve",
+                   "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred",
+                   "thousand", "million"}
+        if not spelled & set(a):
+            return False
+    return SequenceMatcher(None, a, b, autojunk=False).ratio() >= 0.6
+
+
+def polish(paragraphs: list[dict], llm: str, vocab: str, share_from: float, share_to: float) -> int:
+    """Adds a 'polished' text to each paragraph. Returns how many rewrites were accepted."""
+    batches, cur, size = [], [], 0
+    for p in paragraphs:
+        if size + len(p["text"]) > 2400 and cur:
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(p)
+        size += len(p["text"])
+    if cur:
+        batches.append(cur)
+    accepted = 0
+    for n, batch in enumerate(batches, 1):
+        step(share_from + (share_to - share_from) * (n - 1) / len(batches),
+             f"Polishing the transcript, part {n} of {len(batches)}")
+        listing = "\n\n".join(f"[{p['id']}] {SPEAKER_NAMES.get(p['source'], p['source'])}: {p['text']}" for p in batch)
+        body = {
+            "model": llm, "stream": False, "think": False, "format": PolishedBatch.model_json_schema(),
+            "options": {"temperature": 0.1, "num_ctx": 8192},
+            "messages": [
+                {"role": "system", "content": POLISH_SYSTEM},
+                {"role": "user", "content": f"Key words for this session: {vocab}\n\nParagraphs:\n\n{listing}"},
+            ],
+        }
+        try:
+            r = httpx.post(OLLAMA, json=body, timeout=900)
+            r.raise_for_status()
+            result = PolishedBatch.model_validate_json(r.json()["message"]["content"])
+        except Exception as e:  # a failed batch keeps the cleaned text, it never blocks the pipeline
+            print(f"  polish batch {n} failed: {e}", flush=True)
+            continue
+        by_id = {p.id: p.text.strip() for p in result.paragraphs}
+        for p in batch:
+            new = by_id.get(p["id"], "")
+            new = re.sub(r"^(Room|Remote):\s*", "", new)
+            if new and polish_is_safe(p["text"], new):
+                p["polished"] = new
+                accepted += 1
+    return accepted
 
 
 # ============================================================================== 3. summary
@@ -296,7 +454,8 @@ def write_transcripts(session: Path, meta: dict, segments: list[dict], paragraph
     lines = [f"# Transcript: {meta['name']}", "",
              f"Recorded {meta['started'].replace('T', ' ')}, length {stamp(meta.get('duration_s', 0))}.", ""]
     for p in paragraphs:
-        lines += [f"**{SPEAKER_NAMES.get(p['source'], p['source'])}, {stamp(p['start'])}**", "", p["text"], ""]
+        lines += [f"**{SPEAKER_NAMES.get(p['source'], p['source'])}, {stamp(p['start'])}**", "",
+                  p.get("polished") or p["text"], ""]
     (session / "transcript.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -333,15 +492,18 @@ def main() -> int:
     ap.add_argument("--min-grounding", type=float, default=0.85)
     ap.add_argument("--relink", action="store_true", help="only fix time and speaker links of saved requirements")
     ap.add_argument("--summary-only", action="store_true", help="only rebuild the summary from saved parts")
+    ap.add_argument("--polish-only", action="store_true", help="only rebuild and polish the readable transcript")
+    ap.add_argument("--no-polish", action="store_true", help="skip the polished transcript step")
     args = ap.parse_args()
 
     session = args.session or latest_session()
     meta = json.loads((session / "session.json").read_text(encoding="utf-8"))
     print(f"Session: {session.name}", flush=True)
-    global VOCAB
+    global VOCAB, HOTWORDS
     if meta.get("vocabulary"):
         # the topic and key words for this session guide spelling of names and domain terms
         VOCAB = f"Requirements interview in Ghana. {meta['vocabulary'].strip()}"
+        HOTWORDS = meta["vocabulary"].strip()
     if args.relink:
         print(f"Relinked {relink(session)} requirements in {session.name}")
         return 0
@@ -350,6 +512,14 @@ def main() -> int:
         httpx.get("http://localhost:11434/api/tags", timeout=5).raise_for_status()
     except Exception:
         sys.exit("Ollama is not running. Start the Ollama app (or run `ollama serve`) and try again.")
+
+    if args.polish_only:
+        segments = json.loads((session / "transcript.json").read_text(encoding="utf-8"))
+        paragraphs = build_paragraphs(segments)
+        n = polish(paragraphs, args.llm, HOTWORDS or VOCAB, 0.02, 0.98)
+        write_transcripts(session, meta, segments, paragraphs)
+        step(1.0, f"Polished {n} of {len(paragraphs)} paragraphs")
+        return 0
 
     if args.summary_only:
         notes = json.loads((session / "part_summaries.json").read_text(encoding="utf-8"))
@@ -366,7 +536,7 @@ def main() -> int:
         segments = live_segments(session)
         tx_share = 0.0
     else:
-        tx_share = 0.5
+        tx_share = 0.45
         segments = transcribe(session, args.asr_model, args.threads, tx_share, denoise=not args.no_denoise)
     if not segments:
         sys.exit("No speech found in this session.")
@@ -380,7 +550,7 @@ def main() -> int:
     text = "\n".join(f"{SPEAKER_NAMES.get(s['source'], s['source'])}: {s['text']}" for s in segments)
     parts = chunks(text)
     found, dropped, notes = [], 0, []
-    span = 0.9 - (tx_share + 0.02)
+    span = 0.8 - (tx_share + 0.02)
     for n, part in enumerate(parts, 1):
         step(tx_share + 0.02 + span * (n - 1) / len(parts), f"Reading the conversation, part {n} of {len(parts)}")
         result = call_llm(args.llm, part)
@@ -413,10 +583,16 @@ def main() -> int:
     (session / "requirements.md").write_text(requirements_markdown(meta, reqs, dropped), encoding="utf-8")
 
     # 3. summary of the whole session
-    step(0.92, "Writing the summary")
+    step(0.8, "Writing the summary")
     s = summarise(meta, notes, reqs, args.llm)
     (session / "summary.json").write_text(s.model_dump_json(indent=2), encoding="utf-8")
     (session / "summary.md").write_text(summary_markdown(meta, s), encoding="utf-8")
+
+    # 4. polished reading version of the transcript (last, so items and summary are ready sooner)
+    if not args.no_polish:
+        n = polish(paragraphs, args.llm, HOTWORDS or VOCAB, 0.83, 0.99)
+        write_transcripts(session, meta, segments, paragraphs)
+        print(f"  polished {n} of {len(paragraphs)} paragraphs", flush=True)
 
     step(1.0, f"Done: {len(reqs)} items, {dropped} dropped as ungrounded")
     print(f"  {session / 'transcript.md'}\n  {session / 'summary.md'}\n  {session / 'requirements.md'}")

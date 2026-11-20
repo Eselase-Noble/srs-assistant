@@ -52,6 +52,7 @@ export interface Paragraph {
   start: number;
   end: number;
   text: string;
+  polished?: string; // clean edited version of `text`, checked against it for drift
   segment_ids: number[];
 }
 

@@ -11,10 +11,12 @@ interface Props {
   playing: boolean;
   follow: boolean;
   filter?: string;
+  polished?: boolean;
   onSeek: (seconds: number) => void;
 }
 
 interface BlockProps {
+  polished: boolean;
   para: Paragraph;
   segs: Segment[];
   activeTime: number | null; // only the paragraph being played gets a time, so the others never re-render
@@ -30,7 +32,7 @@ function mark(text: string, query: string) {
   return <>{text.slice(0, at)}<mark>{text.slice(at, at + query.length)}</mark>{text.slice(at + query.length)}</>;
 }
 
-const Block = memo(function Block({ para, segs, activeTime, follow, query, onSeek }: BlockProps) {
+const Block = memo(function Block({ para, segs, activeTime, follow, query, polished, onSeek }: BlockProps) {
   const ref = useRef<HTMLElement>(null);
   const active = activeTime != null;
 
@@ -47,7 +49,11 @@ const Block = memo(function Block({ para, segs, activeTime, follow, query, onSee
         <span className="num">{clock(para.start)}</span>
       </button>
       <p className="para-text">
-        {hasWords && !query
+        {polished ? (
+          <span onClick={() => onSeek(para.start)} title="Play this paragraph">
+            {mark(para.polished ?? para.text, query)}
+          </span>
+        ) : hasWords && !query
           ? segs.map((s) => (s.words ?? []).map((w, i) => {
               const on = activeTime != null && activeTime >= w.s && activeTime < w.e + 0.15;
               const unclear = w.p != null && w.p < 0.5;
@@ -62,10 +68,11 @@ const Block = memo(function Block({ para, segs, activeTime, follow, query, onSee
   );
 });
 
-export function Paragraphs({ paragraphs, segments, currentTime, playing, follow, filter, onSeek }: Props) {
+export function Paragraphs({ paragraphs, segments, currentTime, playing, follow, filter, polished = false, onSeek }: Props) {
   const byId = useMemo(() => new Map(segments.map((s) => [s.id, s])), [segments]);
   const query = filter?.trim().toLowerCase() ?? "";
-  const shown = query ? paragraphs.filter((p) => p.text.toLowerCase().includes(query)) : paragraphs;
+  const textOf = (p: Paragraph) => (polished ? p.polished ?? p.text : p.text);
+  const shown = query ? paragraphs.filter((p) => textOf(p).toLowerCase().includes(query)) : paragraphs;
 
   if (!paragraphs.length) return <div className="empty"><p>No transcript for this session yet.</p></div>;
 
@@ -75,7 +82,8 @@ export function Paragraphs({ paragraphs, segments, currentTime, playing, follow,
         const inside = currentTime >= p.start && currentTime <= p.end + 0.5 && (playing || currentTime > 0);
         return (
           <Block key={p.id} para={p} segs={p.segment_ids.map((id) => byId.get(id)).filter(Boolean) as Segment[]}
-            activeTime={inside ? currentTime : null} follow={follow && playing} query={query} onSeek={onSeek} />
+            activeTime={inside ? currentTime : null} follow={follow && playing} query={query}
+            polished={polished} onSeek={onSeek} />
         );
       })}
       {query && !shown.length && <div className="empty"><p>No paragraph mentions “{filter}”.</p></div>}

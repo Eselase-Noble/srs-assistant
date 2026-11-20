@@ -32,7 +32,7 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
   const [track, setTrack] = useState("mixed");
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [view, setView] = useState<"paragraphs" | "timed">("paragraphs");
+  const [view, setView] = useState<"auto" | "polished" | "paragraphs" | "timed">("auto");
   const [follow, setFollow] = useState(true);
   const [showDropped, setShowDropped] = useState(false);
   const [vocab, setVocab] = useState("");
@@ -149,6 +149,9 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
 
   const job = session.job;
   const running = job?.state === "running";
+  const hasPolished = session.paragraphs.some((p) => p.polished);
+  // show the polished text by default once it exists, otherwise word for word
+  const layout = view === "auto" ? (hasPolished ? "polished" : "paragraphs") : view === "polished" && !hasPolished ? "paragraphs" : view;
   const tracks = session.audio;
   const activeTrack = tracks.includes(track) ? track : tracks[0];
   const c = session.counts;
@@ -325,12 +328,18 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
           <div className="pane" style={{ flex: 1 }}>
             <div className="pane-head">
               <div className="segmented" role="group" aria-label="Transcript layout">
-                <button aria-pressed={view === "paragraphs"} onClick={() => setView("paragraphs")}>Paragraphs</button>
-                <button aria-pressed={view === "timed"} onClick={() => setView("timed")}>Timed</button>
+                {hasPolished && (
+                  <button aria-pressed={layout === "polished"} onClick={() => setView("polished")}
+                    title="Edited for reading: punctuation fixed, fillers and false starts removed">Polished</button>
+                )}
+                <button aria-pressed={layout === "paragraphs"} onClick={() => setView("paragraphs")}
+                  title="Word for word, grouped into paragraphs. The playing word is highlighted">Word for word</button>
+                <button aria-pressed={layout === "timed"} onClick={() => setView("timed")}
+                  title="One line per spoken segment with its time">Timed</button>
               </div>
               <span className="faint" style={{ fontSize: 12 }}>
-                {session.accurate ? "Accurate transcript" : "Live draft"}, {view === "paragraphs"
-                  ? `${session.paragraphs.length} paragraphs` : `${session.transcript.length} lines`}
+                {session.accurate ? "Accurate transcript" : "Live draft"}, {layout === "timed"
+                  ? `${session.transcript.length} lines` : `${session.paragraphs.length} paragraphs`}
               </span>
               <label className="check" style={{ marginLeft: 8, fontSize: 12 }}>
                 <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
@@ -350,9 +359,10 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
               </label>
             </div>
             <div className="pane-body">
-              {view === "paragraphs" ? (
+              {layout !== "timed" ? (
                 <Paragraphs paragraphs={session.paragraphs} segments={session.transcript} currentTime={time}
-                  playing={playing} follow={follow} filter={query} onSeek={(t) => audio.current?.seek(t)} />
+                  playing={playing} follow={follow} filter={query} polished={layout === "polished"}
+                  onSeek={(t) => audio.current?.seek(t)} />
               ) : (
                 <Transcript reading requirements={reqs} linkedSegment={null} quote={null}
                   segments={showDropped
