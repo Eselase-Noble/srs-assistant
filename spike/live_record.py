@@ -137,6 +137,7 @@ class LiveTranscriber(threading.Thread):
 
         self.carry: dict[str, tuple[np.ndarray, float]] = {}
         self.last_text: dict[str, str] = {}
+        self.language = "en"  # Twi support is paused; forcing English avoids wrong-language guesses
 
     def submit(self, label, idx, audio, final=False):
         self.q.put((label, idx, audio, final))
@@ -160,6 +161,7 @@ class LiveTranscriber(threading.Thread):
                 if not len(audio) or float(np.sqrt(np.mean(audio ** 2))) < SILENCE_RMS:
                     continue
                 segments, info = model.transcribe(audio, beam_size=1, vad_filter=True, initial_prompt=self.prompt,
+                                                  language=self.language,
                                                   condition_on_previous_text=False)
                 segments = list(segments)
                 total = len(audio) / SAMPLE_RATE
@@ -183,11 +185,11 @@ class LiveTranscriber(threading.Thread):
                     row = {"source": label, "start": round(offset + s.start, 2), "end": round(offset + s.end, 2),
                            "text": text, "language": info.language,
                            "language_prob": round(info.language_probability, 2),
-                           "needs_twi_pass": info.language != "en"}
+                           "needs_twi_pass": False}
                     jf.write(json.dumps(row, ensure_ascii=False) + "\n")
                     jf.flush()
                     stamp = str(timedelta(seconds=int(row["start"])))
-                    flag = "  [non-English → Twi pass after session]" if row["needs_twi_pass"] else ""
+                    flag = ""
                     mf.write(f"[{stamp}] **{label}**: {text}{flag}\n\n")
                     mf.flush()
                     print(f"\r[{stamp}] {label}: {text}{flag}" + " " * 10)

@@ -42,7 +42,15 @@ nothing is lost if something crashes. Press **Ctrl+C** to stop. You get `session
 The live transcript is an English draft. Lines marked *non-English* get the Twi pass after the session.
 On calls, **use headphones**, otherwise the mic re-records the speakers.
 
-## Run the analysis steps
+## After the session: transcript and requirements in one step
+```powershell
+uv run python process_session.py                  # newest session, uses the live transcript
+uv run python process_session.py --retranscribe   # redo speech to text first for better accuracy
+```
+This writes `transcript.md`, `requirements.md` and `requirements.json` into the session folder.
+Ollama has to be running.
+
+## Run the analysis steps one at a time
 ```powershell
 uv run python asr_compare.py                     # every model on every clip -> results/asr_report.md
 uv run python translate_twi.py --from-asr results/asr_twi.json --model akan-turbo

@@ -56,6 +56,9 @@ interview transcript and extract requirement candidates.
 Rules:
 - Extract only what a stakeholder actually said or clearly implied. Never invent requirements.
 - Each candidate is ONE requirement (singular). Split compound statements.
+- "statement" is YOUR clean rewrite, not a copy of the quote: "The system shall ..." for functional and
+  non_functional items, a plain sentence for the other types. Never start it with "And", "I", "We".
+- Who may see or do what (permissions, access, privacy) is non_functional with quality_category "security".
 - "quote" MUST be copied character-for-character from the transcript (a short span, 5-40 words).
 - Classify: functional = behaviour/feature; non_functional = quality (speed, security, usability...);
   constraint = imposed limit (technology, budget, law, deadline); business_rule = policy the business follows;
