@@ -33,6 +33,9 @@ class ReqType(str, Enum):
     business_rule = "business_rule"
     assumption = "assumption"
     open_question = "open_question"
+    current_process = "current_process"
+    pain_point = "pain_point"
+    stakeholder = "stakeholder"
 
 
 class Candidate(BaseModel):
@@ -62,7 +65,12 @@ Rules:
 - "quote" MUST be copied character-for-character from the transcript (a short span, 5-40 words).
 - Classify: functional = behaviour/feature; non_functional = quality (speed, security, usability...);
   constraint = imposed limit (technology, budget, law, deadline); business_rule = policy the business follows;
-  assumption = something taken as true; open_question = something unclear that needs follow-up.
+  assumption = something taken as true; open_question = something unclear that needs follow-up;
+  current_process = a step in how the work is done today (who does what, with which tools, how often);
+  pain_point = a problem, delay, error or frustration in the current way of working;
+  stakeholder = a role, team or outside party involved in the work (statement: who they are and what they do).
+- Interviews about daily operations are mostly current_process and pain_point. Capture them all: they are
+  where future requirements come from.
 - Ignore greetings, small talk and the interviewer's own questions unless the stakeholder confirms them.
 - If nothing relevant is present, return an empty list."""
 

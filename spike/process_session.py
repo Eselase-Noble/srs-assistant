@@ -26,6 +26,9 @@ from extract import VAGUE, call_llm, chunks, grounding_score, norm
 SESSIONS = Path(__file__).parent / "sessions"
 SPEAKER_NAMES = {"MIC": "Room", "SYSTEM": "Remote"}
 TYPE_TITLES = [
+    ("current_process", "How the work is done today"),
+    ("pain_point", "Pain points"),
+    ("stakeholder", "People and roles involved"),
     ("functional", "Functional requirements"),
     ("non_functional", "Quality requirements (non functional)"),
     ("constraint", "Constraints"),
