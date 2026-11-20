@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Recordings, transcripts and outputs never go to GitHub.
+# They can contain real people's voices and private business details.
+spike/sessions/
+spike/results/
+spike/audio/*
+!spike/audio/README.md
+!spike/audio/sample_english_tts.wav
+
+# Secrets and local settings
+.env
+.claude/settings.local.json
+
+# OS clutter
+Thumbs.db
+.DS_Store
