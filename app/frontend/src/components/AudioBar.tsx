@@ -1,3 +1,5 @@
+"use client";
+
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Requirement } from "../types";
 import { clock } from "../format";

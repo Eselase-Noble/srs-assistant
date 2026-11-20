@@ -1,6 +1,6 @@
 # The app
 
-This is the review app: record a session, go through what the model found, and export the result.
+This is the review app: record a session, go through what the model found, and export the result. It is built with Next.js and TypeScript, exported as static files and served by a small local FastAPI server.
 
 ## Running it
 
@@ -21,7 +21,7 @@ uv run --project spike python app/backend/server.py
 
 and open http://localhost:8765. Ollama needs to be running for the extraction step.
 
-While working on the UI itself, run the server as above and `npm run dev` in `app\frontend`, then use http://localhost:5173. Changes show up straight away.
+While working on the UI itself, run the server as above and `npm run dev` in `app\frontend`, then use http://localhost:5173. Changes show up straight away, and calls to `/api` are forwarded to the server.
 
 ## Shortcuts on the review screen
 

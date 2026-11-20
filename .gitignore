@@ -21,5 +21,8 @@ Thumbs.db
 
 # Frontend
 app/frontend/node_modules/
-app/frontend/dist/
+app/frontend/out/
+app/frontend/.next/
+app/frontend/next-env.d.ts
+app/frontend/*.tsbuildinfo
 

@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef } from "react";
 import type { RecordingStatus } from "../types";
 import { SPEAKER, clock } from "../format";

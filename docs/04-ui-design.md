@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | First version built |
 | **Date** | 2026-11-20 |
-| **Code** | `app/frontend` (React and TypeScript on Vite), `app/backend/server.py` (FastAPI) |
+| **Code** | `app/frontend` (Next.js 16 and TypeScript, static export), `app/backend/server.py` (FastAPI) |
 
 ## What the app is for
 

@@ -1,3 +1,5 @@
+"use client";
+
 import { Fragment, useEffect, useMemo, useRef } from "react";
 import type { Requirement, Segment } from "../types";
 import { SPEAKER, clock } from "../format";

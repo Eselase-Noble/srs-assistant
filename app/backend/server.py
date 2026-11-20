@@ -25,7 +25,7 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parents[2]
 SPIKE = ROOT / "spike"
 SESSIONS = SPIKE / "sessions"
-FRONTEND = ROOT / "app" / "frontend" / "dist"
+FRONTEND = ROOT / "app" / "frontend" / "out"  # Next.js static export (npm run build)
 PYTHON = sys.executable
 
 app = FastAPI(title="srs-assistant")

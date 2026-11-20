@@ -1,11 +1,13 @@
+"use client";
+
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./api";
-import type { RecordingStatus, SessionSummary } from "./types";
-import { Icon } from "./components/Icon";
-import { RecordDialog } from "./components/RecordDialog";
-import { RecordingView } from "./components/RecordingView";
-import { SessionView } from "./components/SessionView";
-import { Sidebar } from "./components/Sidebar";
+import { api } from "@/api";
+import type { RecordingStatus, SessionSummary } from "@/types";
+import { Icon } from "./Icon";
+import { RecordDialog } from "./RecordDialog";
+import { RecordingView } from "./RecordingView";
+import { SessionView } from "./SessionView";
+import { Sidebar } from "./Sidebar";
 
 function readHash(): string | null {
   const m = location.hash.match(/^#\/s\/(.+)$/);
@@ -14,7 +16,7 @@ function readHash(): string | null {
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [selected, setSelected] = useState<string | null>(readHash());
+  const [selected, setSelected] = useState<string | null>(null); // set from the URL hash after mount
   const [dialog, setDialog] = useState(false);
   const [rec, setRec] = useState<RecordingStatus>({ active: false });
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -40,6 +42,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    setSelected(readHash());
     void refresh();
     void api.recording().then(setRec).catch(() => undefined);
     const t = setInterval(refresh, 6000);
