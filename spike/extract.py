@@ -135,9 +135,23 @@ def call_llm(model: str, excerpt: str) -> Extraction:
             {"role": "user", "content": f"Transcript excerpt:\n\n{excerpt}"},
         ],
     }
-    r = httpx.post(OLLAMA, json=body, timeout=900)
-    r.raise_for_status()
-    return Extraction.model_validate_json(r.json()["message"]["content"])
+    return Extraction.model_validate_json(post_llm(body))
+
+
+def post_llm(body: dict, attempts: int = 2) -> str:
+    """Call the local model. Generous time limit because the computer may be busy recording at the
+    same time; one retry for a timeout or a reply that is not valid JSON."""
+    last: Exception | None = None
+    for _ in range(attempts):
+        try:
+            r = httpx.post(OLLAMA, json=body, timeout=httpx.Timeout(3600, connect=30))
+            r.raise_for_status()
+            content = r.json()["message"]["content"]
+            json.loads(content)
+            return content
+        except (httpx.TimeoutException, httpx.HTTPStatusError, json.JSONDecodeError, KeyError) as e:
+            last = e
+    raise RuntimeError(f"The local model did not answer properly after {attempts} tries: {last}")
 
 
 def load_transcript(path: Path, asr_model: str) -> str:

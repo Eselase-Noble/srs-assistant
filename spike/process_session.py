@@ -28,7 +28,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from common import FFMPEG, load_audio
-from extract import OLLAMA, VAGUE, call_llm, chunks, grounding_score, norm
+from extract import OLLAMA, VAGUE, call_llm, chunks, grounding_score, norm, post_llm
 
 SESSIONS = Path(__file__).parent / "sessions"
 SPEAKER_NAMES = {"MIC": "Room", "SYSTEM": "Remote"}
@@ -64,6 +64,15 @@ def latest_session() -> Path:
 
 
 # ============================================================================== 1. transcription
+def accurate_transcript(session: Path) -> list[dict] | None:
+    """The saved accurate transcript (it has word timings), if a previous run produced one."""
+    path = session / "transcript.json"
+    if not path.exists():
+        return None
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    return rows if rows and "words" in rows[0] else None
+
+
 def live_segments(session: Path) -> list[dict]:
     path = session / "transcript_live.jsonl"
     if not path.exists():
@@ -348,9 +357,7 @@ def polish(paragraphs: list[dict], llm: str, vocab: str, share_from: float, shar
             ],
         }
         try:
-            r = httpx.post(OLLAMA, json=body, timeout=900)
-            r.raise_for_status()
-            result = PolishedBatch.model_validate_json(r.json()["message"]["content"])
+            result = PolishedBatch.model_validate_json(post_llm(body))
         except Exception as e:  # a failed batch keeps the cleaned text, it never blocks the pipeline
             print(f"  polish batch {n} failed: {e}", flush=True)
             continue
@@ -400,9 +407,7 @@ def summarise(meta: dict, part_notes: list[str], reqs: list[dict], llm: str) -> 
         "options": {"temperature": 0.2, "num_ctx": 16384},
         "messages": [{"role": "system", "content": SUMMARY_SYSTEM}, {"role": "user", "content": user}],
     }
-    r = httpx.post(OLLAMA, json=body, timeout=1800)
-    r.raise_for_status()
-    return MeetingSummary.model_validate_json(r.json()["message"]["content"])
+    return MeetingSummary.model_validate_json(post_llm(body))
 
 
 def summary_markdown(meta: dict, s: MeetingSummary) -> str:
@@ -494,6 +499,7 @@ def main() -> int:
     ap.add_argument("--summary-only", action="store_true", help="only rebuild the summary from saved parts")
     ap.add_argument("--polish-only", action="store_true", help="only rebuild and polish the readable transcript")
     ap.add_argument("--no-polish", action="store_true", help="skip the polished transcript step")
+    ap.add_argument("--fresh", action="store_true", help="transcribe again even if an accurate transcript exists")
     args = ap.parse_args()
 
     session = args.session or latest_session()
@@ -535,6 +541,11 @@ def main() -> int:
     if args.quick:
         segments = live_segments(session)
         tx_share = 0.0
+    elif not args.fresh and accurate_transcript(session):
+        # an earlier run already made the accurate transcript (for example it stopped later on): reuse it
+        segments = accurate_transcript(session)
+        tx_share = 0.0
+        step(0.01, f"Reusing the accurate transcript from the last run ({len(segments)} lines)")
     else:
         tx_share = 0.45
         segments = transcribe(session, args.asr_model, args.threads, tx_share, denoise=not args.no_denoise)
