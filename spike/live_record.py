@@ -323,6 +323,11 @@ def main() -> int:
         transcriber.q.put(None)
         transcriber.done.wait()
 
+    try:  # keep changes made while recording, such as a rename from the app
+        on_disk = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta.update({k: on_disk[k] for k in ("name", "vocabulary") if k in on_disk})
+    except (OSError, json.JSONDecodeError):
+        pass
     meta.update(status="recorded", ended=datetime.now().isoformat(timespec="seconds"),
                 duration_s=round((datetime.now() - started).total_seconds(), 1),
                 files=[p.name for p in produced] + (["mixed.wav"] if produced else []))
