@@ -78,16 +78,39 @@ def retranscribe(session: Path, model_name: str) -> list[dict]:
 
 
 def locate(quote: str, segments: list[dict]) -> dict | None:
-    """Find the segment (or pair of neighbouring segments) a quote came from."""
+    """Find the segment a quote came from.
+
+    Single lines are checked first. Only when no single line contains the quote do we try pairs of
+    neighbouring lines (quotes that run across a line break), and then the line holding most of the
+    quote wins. Checking pairs first wrongly pinned quotes to the line before the real one.
+    """
     best, best_seg = 0.0, None
-    for i, seg in enumerate(segments):
-        for text in (seg["text"], seg["text"] + " " + segments[i + 1]["text"] if i + 1 < len(segments) else ""):
-            if not text:
-                continue
-            score = grounding_score(quote, text)
-            if score > best:
-                best, best_seg = score, seg
+    for seg in segments:
+        score = grounding_score(quote, seg["text"])
+        if score > best:
+            best, best_seg = score, seg
+    if best >= 0.9:
+        return best_seg
+    for a, b in zip(segments, segments[1:]):
+        score = grounding_score(quote, a["text"] + " " + b["text"])
+        if score > best:
+            share_a = grounding_score(quote, a["text"]) if a["text"] else 0
+            share_b = grounding_score(quote, b["text"]) if b["text"] else 0
+            best, best_seg = score, (a if share_a >= share_b else b)
     return best_seg
+
+
+def relink(session: Path) -> int:
+    """Recompute time, speaker and segment for saved requirements without calling the model again."""
+    segments = json.loads((session / "transcript.json").read_text(encoding="utf-8"))
+    reqs = json.loads((session / "requirements.json").read_text(encoding="utf-8"))
+    for r in reqs:
+        seg = locate(r["quote"], segments)
+        if seg:
+            r.update(time=stamp(seg["start"]), start=seg["start"], segment_id=seg["id"],
+                     speaker=SPEAKER_NAMES.get(seg["source"], seg["source"]))
+    (session / "requirements.json").write_text(json.dumps(reqs, indent=2, ensure_ascii=False), encoding="utf-8")
+    return len(reqs)
 
 
 def main() -> int:
@@ -97,9 +120,13 @@ def main() -> int:
     ap.add_argument("--asr-model", default="small", help="small (about 3x real time) or large-v3-turbo (about 1x)")
     ap.add_argument("--llm", default="qwen3:8b")
     ap.add_argument("--min-grounding", type=float, default=0.85)
+    ap.add_argument("--relink", action="store_true", help="only fix time and speaker links of saved requirements")
     args = ap.parse_args()
 
     session = args.session or latest_session()
+    if args.relink:
+        print(f"Relinked {relink(session)} requirements in {session.name}")
+        return 0
     meta = json.loads((session / "session.json").read_text(encoding="utf-8"))
     print(f"Session: {session.name}")
 
