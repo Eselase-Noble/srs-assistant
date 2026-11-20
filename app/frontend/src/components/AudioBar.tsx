@@ -18,13 +18,14 @@ interface Props {
   markers: Requirement[];
   selectedId: string | null;
   onTime: (t: number) => void;
+  onPlaying?: (playing: boolean) => void;
 }
 
 const TRACK_LABEL: Record<string, string> = { mixed: "Everyone", mic: "Room", system: "Remote" };
 const SPEEDS = [1, 1.25, 1.5, 2];
 
 export const AudioBar = forwardRef<AudioHandle, Props>(function AudioBar(
-  { src, tracks, track, onTrack, markers, selectedId, onTime }, ref) {
+  { src, tracks, track, onTrack, markers, selectedId, onTime, onPlaying }, ref) {
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -68,8 +69,8 @@ export const AudioBar = forwardRef<AudioHandle, Props>(function AudioBar(
         ref={audio}
         src={src}
         preload="metadata"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
+        onPlay={() => { setPlaying(true); onPlaying?.(true); }}
+        onPause={() => { setPlaying(false); onPlaying?.(false); }}
         onLoadedMetadata={(e) => setLength(e.currentTarget.duration)}
         onTimeUpdate={(e) => { setTime(e.currentTarget.currentTime); onTime(e.currentTarget.currentTime); }}
       />

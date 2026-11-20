@@ -4,7 +4,7 @@ import { useState } from "react";
 
 interface Props {
   onClose: () => void;
-  onStart: (name: string, source: "both" | "mic", consent: string) => Promise<void>;
+  onStart: (name: string, source: "both" | "mic", consent: string, vocabulary: string) => Promise<void>;
 }
 
 export function RecordDialog({ onClose, onStart }: Props) {
@@ -12,6 +12,7 @@ export function RecordDialog({ onClose, onStart }: Props) {
   const [source, setSource] = useState<"both" | "mic">("both");
   const [agreed, setAgreed] = useState(false);
   const [who, setWho] = useState("");
+  const [vocab, setVocab] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,7 +21,8 @@ export function RecordDialog({ onClose, onStart }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await onStart(name.trim() || "Session", source, who.trim() ? `Agreed: ${who.trim()}` : "Participants agreed to recording");
+      await onStart(name.trim() || "Session", source,
+        who.trim() ? `Agreed: ${who.trim()}` : "Participants agreed to recording", vocab.trim());
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -39,6 +41,14 @@ export function RecordDialog({ onClose, onStart }: Props) {
             <label htmlFor="rec-name">Session name</label>
             <input id="rec-name" className="input" autoFocus placeholder="e.g. Warehouse operations, Ama"
               value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="rec-vocab">Topic and key words</label>
+            <input id="rec-vocab" className="input" placeholder="e.g. Hospital records, OPD, patient folders, NHIS, Dr Mensah"
+              value={vocab} onChange={(e) => setVocab(e.target.value)} />
+            <div className="field-help">
+              Optional, but it noticeably improves the transcript: names, places and terms people will use.
+            </div>
           </div>
           <div className="field">
             <label>Where is the conversation happening?</label>

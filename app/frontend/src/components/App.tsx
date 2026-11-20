@@ -70,8 +70,8 @@ export default function App() {
     return () => clearInterval(t);
   }, [rec.active, rec.state, refresh, toast]);
 
-  const start = async (name: string, source: "both" | "mic", consent: string) => {
-    const { session_id } = await api.startRecording(name, source, consent);
+  const start = async (name: string, source: "both" | "mic", consent: string, vocabulary: string) => {
+    const { session_id } = await api.startRecording(name, source, consent, vocabulary);
     setDialog(false);
     setRec({ active: true, session_id, state: "starting" });
     select(session_id);

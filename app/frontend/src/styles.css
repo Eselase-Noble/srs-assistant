@@ -354,6 +354,60 @@ kbd {
   padding: 8px 14px; border-radius: var(--radius); font-size: 13px; z-index: 20;
 }
 
+/* ---------------------------------------------------------------- processing strip and notices */
+.job-strip, .notice {
+  display: flex; align-items: center; gap: 10px; margin: 0 -28px; padding: 8px 28px; font-size: 13px;
+  border-top: 1px solid var(--line);
+}
+.job-strip { background: var(--accent-soft); color: var(--text); }
+.job-strip .progress { flex: 0 0 180px; margin: 0; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.notice { background: var(--warn-soft); color: var(--warn); }
+.notice span { color: var(--text-2); }
+
+/* ---------------------------------------------------------------- paragraph reader */
+.paras { padding-top: 16px; }
+.para {
+  display: grid; grid-template-columns: 104px 1fr; gap: 16px; padding: 10px 28px 14px;
+  border-left: 3px solid transparent; transition: background 0.2s;
+}
+.para.is-active { border-left-color: var(--accent); background: var(--surface-2); }
+.para-meta {
+  border: 0; background: none; padding: 2px 0 0; cursor: pointer; text-align: left; display: flex;
+  flex-direction: column; gap: 1px; font-size: 12px; color: var(--text-3); align-self: start;
+}
+.para-meta:hover .num { color: var(--accent); }
+.para-speaker { font-weight: 600; }
+.para-speaker.MIC { color: var(--accent); }
+.para-speaker.SYSTEM { color: var(--ok); }
+.para-text { margin: 0; font-size: 15px; line-height: 1.75; max-width: 70ch; }
+.para-text .w { cursor: pointer; border-radius: 2px; }
+.para-text .w:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.para-text .w.is-on { background: var(--highlight); box-shadow: 0 0 0 1px var(--highlight); }
+.para-text .w.is-unclear { text-decoration: underline dotted var(--warn); text-underline-offset: 3px; }
+.line.is-dropped { opacity: 0.55; }
+.line.is-dropped .line-text { text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.drop-reason {
+  margin-left: 8px; font-size: 11px; color: var(--warn); text-decoration: none; display: inline-block;
+  border: 1px solid var(--warn-soft); border-radius: 3px; padding: 0 4px;
+}
+
+/* ---------------------------------------------------------------- written summary */
+.summary-card { max-width: 980px; }
+.summary-card .card-head { font-weight: 600; }
+.prose h2 { font: 600 18px/1.35 var(--font-display); margin: 8px 0 8px; letter-spacing: -0.01em; }
+.prose h3 {
+  font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.06em;
+  margin: 20px 0 8px;
+}
+.prose .lead { font-size: 15px; line-height: 1.7; margin: 0; max-width: 75ch; }
+.topics { margin: 0; display: grid; gap: 10px; }
+.topics > div { display: grid; grid-template-columns: 200px 1fr; gap: 16px; padding: 8px 0; border-top: 1px solid var(--line); }
+.topics dt { font-weight: 600; }
+.topics dd { margin: 0; color: var(--text-2); line-height: 1.6; }
+.summary-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 28px; }
+.summary-lists ul { margin: 0; padding-left: 18px; }
+.summary-lists li { margin: 4px 0; line-height: 1.55; color: var(--text-2); }
+
 @media (max-width: 960px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }

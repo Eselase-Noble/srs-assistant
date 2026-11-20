@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import type { ReqStatus, ReqType, Requirement, SessionDetail } from "../types";
+import type { ProcessMode, ReqStatus, ReqType, Requirement, SessionDetail } from "../types";
+import { Paragraphs } from "./Paragraphs";
 import { TYPES, TYPE_ORDER, day, duration } from "../format";
 import { AudioBar, type AudioHandle } from "./AudioBar";
 import { Icon } from "./Icon";
@@ -30,12 +31,18 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [track, setTrack] = useState("mixed");
   const [time, setTime] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [view, setView] = useState<"paragraphs" | "timed">("paragraphs");
+  const [follow, setFollow] = useState(true);
+  const [showDropped, setShowDropped] = useState(false);
+  const [vocab, setVocab] = useState("");
   const audio = useRef<AudioHandle>(null);
 
   const load = useCallback(async () => {
     try {
       const s = await api.session(sessionId);
       setSession(s);
+      setVocab((v) => v || s.vocabulary || "");
       setError(null);
       return s;
     } catch (e) {
@@ -124,9 +131,12 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, current, editing, move, patch]);
 
-  const process = async (retranscribe = false) => {
+  const process = async (mode: ProcessMode = "full") => {
     try {
-      await api.process(sessionId, retranscribe);
+      if (mode !== "summary" && vocab.trim() !== (session?.vocabulary ?? "")) {
+        await api.updateSession(sessionId, { vocabulary: vocab.trim() });
+      }
+      await api.process(sessionId, mode);
       await load();
       onChanged();
     } catch (e) {
@@ -157,16 +167,42 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
             </div>
           </div>
           <div className="page-actions">
-            {reqs.length > 0 && !running && (
-              <button className="btn" onClick={() => process(false)} title="Run extraction again on the transcript">
-                Re-run extraction
+            {!running && session.audio.length > 0 && (session.transcript.length > 0 || reqs.length > 0) && (
+              <button className="btn" onClick={() => process("full")}
+                title="Transcribe the full recording again with the accurate model, then redo the items and the summary">
+                {session.accurate ? "Process again" : "Make accurate transcript"}
               </button>
             )}
-            <a className="btn" href={api.exportUrl(sessionId)} download={`${session.id}.md`}>
+            {session.paragraphs.length > 0 && (
+              <a className="btn" href={api.transcriptUrl(sessionId)} download={`${session.id}-transcript.md`}
+                title="Download the transcript as paragraphs">
+                <Icon name="doc" /> Transcript
+              </a>
+            )}
+            <a className="btn" href={api.exportUrl(sessionId)} download={`${session.id}.md`}
+              title="Download the summary and the reviewed items">
               <Icon name="download" /> Export
             </a>
           </div>
         </div>
+        {running && (
+          <div className="job-strip" role="status">
+            <span className="dot busy" />
+            <span>{job!.step}</span>
+            <div className="progress"><div style={{ width: `${Math.max(3, job!.progress * 100)}%` }} /></div>
+            <span className="num faint">{Math.round(job!.progress * 100)}%</span>
+          </div>
+        )}
+        {!running && !session.accurate && session.transcript.length > 0 && reqs.length > 0 && (
+          <div className="notice">
+            <Icon name="warn" size={14} />
+            <span>Quick live transcript. The accurate one cleans up noise and captures speech much better.</span>
+            <input className="input" style={{ flex: "1 1 220px", height: 28 }} value={vocab}
+              onChange={(e) => setVocab(e.target.value)} placeholder="Topic and key words, e.g. hospital records, OPD, NHIS"
+              aria-label="Topic and key words" />
+            <button className="btn sm primary" onClick={() => process("full")}>Make accurate transcript</button>
+          </div>
+        )}
         <div className="tabs" role="tablist">
           <button className="tab" role="tab" aria-selected={tab === "review"} onClick={() => setTab("review")}>
             Review <span className="count num">{c.pending ? `${c.pending} left` : c.total}</span>
@@ -187,26 +223,32 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
             {running ? (
               <>
                 <h2>Working through the conversation</h2>
-                <p>{job!.step}. This runs on your computer and takes about two minutes for every four minutes of talk.</p>
+                <p>{job!.step}. Everything runs on this computer. You can read the transcript or listen to the
+                  recording while you wait.</p>
                 <div className="progress"><div style={{ width: `${Math.max(4, job!.progress * 100)}%` }} /></div>
                 <div className="log">{job!.log.slice(-3).map((l, i) => <div key={i}>{l}</div>)}</div>
               </>
             ) : (
               <>
-                <h2>No requirements yet</h2>
+                <h2>Process this session</h2>
                 <p>
-                  {session.transcript.length
-                    ? `The live transcript has ${session.transcript.length} lines. Extract the current processes, pain points and requirements from it, then review them here.`
-                    : "There is no transcript yet. Transcribe the audio first, then extract."}
+                  Processing makes an accurate transcript of the whole recording, groups it into paragraphs, finds the
+                  current processes, pain points and requirements, and writes a summary. It takes roughly as long as
+                  the recording.
                 </p>
-                {job?.state === "failed" && <p className="error">Last attempt failed: {job.step}</p>}
+                {job?.state === "failed" && <p className="error">Last attempt failed: {job.log.at(-1) ?? job.step}</p>}
+                <div className="field" style={{ textAlign: "left", marginBottom: 14 }}>
+                  <label htmlFor="vocab">Topic and key words</label>
+                  <input id="vocab" className="input" value={vocab} onChange={(e) => setVocab(e.target.value)}
+                    placeholder="e.g. Hospital records, OPD, patient folders, NHIS" />
+                  <div className="field-help">Names, places and terms that were used. Helps the transcript spell them right.</div>
+                </div>
                 <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                  <button className="btn primary" onClick={() => process(!session.transcript.length)}>
-                    {session.transcript.length ? "Extract requirements" : "Transcribe and extract"}
-                  </button>
+                  <button className="btn primary" onClick={() => process("full")}>Process session</button>
                   {session.transcript.length > 0 && (
-                    <button className="btn" onClick={() => process(true)} title="Slower, more accurate transcript first">
-                      Re-transcribe first
+                    <button className="btn" onClick={() => process("quick")}
+                      title="Use the live draft transcript. Much faster, less accurate">
+                      Quick draft
                     </button>
                   )}
                 </div>
@@ -282,24 +324,51 @@ export function SessionView({ sessionId, onChanged, toast }: Props) {
         {tab === "transcript" && (
           <div className="pane" style={{ flex: 1 }}>
             <div className="pane-head">
-              <span className="pane-title">Full transcript</span>
+              <div className="segmented" role="group" aria-label="Transcript layout">
+                <button aria-pressed={view === "paragraphs"} onClick={() => setView("paragraphs")}>Paragraphs</button>
+                <button aria-pressed={view === "timed"} onClick={() => setView("timed")}>Timed</button>
+              </div>
+              <span className="faint" style={{ fontSize: 12 }}>
+                {session.accurate ? "Accurate transcript" : "Live draft"}, {view === "paragraphs"
+                  ? `${session.paragraphs.length} paragraphs` : `${session.transcript.length} lines`}
+              </span>
+              <label className="check" style={{ marginLeft: 8, fontSize: 12 }}>
+                <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+                Follow audio
+              </label>
+              {session.dropped.length > 0 && (
+                <label className="check" style={{ fontSize: 12 }}
+                  title="Lines removed as background noise, background talk or text invented from noise">
+                  <input type="checkbox" checked={showDropped}
+                    onChange={(e) => { setShowDropped(e.target.checked); if (e.target.checked) setView("timed"); }} />
+                  Show {session.dropped.length} filtered
+                </label>
+              )}
               <label className="search">
                 <Icon name="search" size={14} />
                 <input className="input" placeholder="Search transcript" value={query} onChange={(e) => setQuery(e.target.value)} />
               </label>
             </div>
             <div className="pane-body">
-              <Transcript reading segments={session.transcript} requirements={reqs} linkedSegment={null} quote={null}
-                currentTime={time} filter={query} onSeek={(t) => audio.current?.seek(t)} />
+              {view === "paragraphs" ? (
+                <Paragraphs paragraphs={session.paragraphs} segments={session.transcript} currentTime={time}
+                  playing={playing} follow={follow} filter={query} onSeek={(t) => audio.current?.seek(t)} />
+              ) : (
+                <Transcript reading requirements={reqs} linkedSegment={null} quote={null}
+                  segments={showDropped
+                    ? [...session.transcript, ...session.dropped.map((d, i) => ({ ...d, id: -1 - i }))].sort((a, b) => a.start - b.start)
+                    : session.transcript}
+                  currentTime={time} filter={query} follow={follow && playing} onSeek={(t) => audio.current?.seek(t)} />
+              )}
             </div>
           </div>
         )}
 
-        {tab === "summary" && <Summary session={session} />}
+        {tab === "summary" && <Summary session={session} busy={running} onWriteSummary={() => process("summary")} />}
 
         <AudioBar ref={audio} src={activeTrack ? api.audioUrl(sessionId, activeTrack) : null}
           tracks={tracks} track={activeTrack ?? "mixed"} onTrack={setTrack}
-          markers={reqs} selectedId={selected} onTime={setTime} />
+          markers={reqs} selectedId={selected} onTime={setTime} onPlaying={setPlaying} />
       </div>
     </>
   );

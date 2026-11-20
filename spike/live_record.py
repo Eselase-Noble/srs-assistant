@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from common import ROOT
+from common import FFMPEG, ROOT
 
 SAMPLE_RATE = 16_000
 BLOCK_SECONDS = 0.5
@@ -206,7 +206,7 @@ def join_chunks(chunk_dir: Path, label: str, out: Path) -> bool:
         return False
     listfile = chunk_dir / f"{label.lower()}_list.txt"
     listfile.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts), encoding="utf-8")
-    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
+    subprocess.run([FFMPEG, "-nostdin", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
                     "-i", str(listfile), "-c", "copy", str(out)], check=True)
     listfile.unlink()
     return True
@@ -216,7 +216,7 @@ def mix(files: list[Path], out: Path) -> None:
     if len(files) == 1:
         out.write_bytes(files[0].read_bytes())
         return
-    args = ["ffmpeg", "-nostdin", "-loglevel", "error", "-y"]
+    args = [FFMPEG, "-nostdin", "-loglevel", "error", "-y"]
     for f in files:
         args += ["-i", str(f)]
     args += ["-filter_complex", f"amix=inputs={len(files)}:duration=longest:normalize=0", str(out)]
@@ -238,6 +238,7 @@ def main() -> int:
     ap.add_argument("--consent", help="note of who consented to recording, stored with the session")
     ap.add_argument("--duration", type=int, help="stop automatically after N seconds")
     ap.add_argument("--session-dir", type=Path, help="exact folder to record into (used by the app)")
+    ap.add_argument("--vocabulary", help="topic and key words, e.g. 'hospital records, OPD, NHIS'")
     ap.add_argument("--list-devices", action="store_true")
     args = ap.parse_args()
 
@@ -255,13 +256,15 @@ def main() -> int:
     sources = get_sources(args.source, args.mic, args.speaker)
     meta = {"name": args.name, "started": started.isoformat(timespec="seconds"),
             "sources": {k: v.name for k, v in sources.items()}, "sample_rate": SAMPLE_RATE,
-            "chunk_seconds": args.chunk_seconds, "consent": args.consent, "status": "recording"}
+            "chunk_seconds": args.chunk_seconds, "consent": args.consent, "status": "recording",
+            "vocabulary": args.vocabulary}
     meta_path = session_dir / "session.json"
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
     transcriber = None
     if not args.no_transcribe:
-        transcriber = LiveTranscriber(args.model, session_dir, args.chunk_seconds, args.threads, args.prompt)
+        prompt = f"Requirements interview in Ghana. {args.vocabulary}" if args.vocabulary else args.prompt
+        transcriber = LiveTranscriber(args.model, session_dir, args.chunk_seconds, args.threads, prompt)
         transcriber.start()
         print(f"Loading live transcription model '{args.model}' ...")
         transcriber.ready.wait()

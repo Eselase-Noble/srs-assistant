@@ -25,8 +25,16 @@ export interface SessionSummary {
   duration_s: number | null;
   sources: string[];
   consent: string | null;
+  vocabulary: string | null;
   state: "recording" | "recorded" | "processing" | "processed";
   counts: Counts;
+}
+
+export interface Word {
+  w: string;
+  s: number;
+  e: number;
+  p?: number; // how sure the speech model is about this word, 0 to 1
 }
 
 export interface Segment {
@@ -35,6 +43,25 @@ export interface Segment {
   start: number;
   end: number;
   text: string;
+  words?: Word[];
+}
+
+export interface Paragraph {
+  id: number;
+  source: string;
+  start: number;
+  end: number;
+  text: string;
+  segment_ids: number[];
+}
+
+export interface MeetingSummary {
+  title: string;
+  overview: string;
+  topics: { title: string; summary: string }[];
+  decisions: string[];
+  pain_points: string[];
+  follow_ups: string[];
 }
 
 export interface Requirement {
@@ -62,8 +89,14 @@ export interface Job {
   log: string[];
 }
 
+export type ProcessMode = "full" | "quick" | "summary";
+
 export interface SessionDetail extends SessionSummary {
   transcript: Segment[];
+  accurate: boolean;
+  paragraphs: Paragraph[];
+  dropped: (Segment & { reason: string })[];
+  summary: MeetingSummary | null;
   requirements: Requirement[];
   audio: string[];
   job: Job | null;

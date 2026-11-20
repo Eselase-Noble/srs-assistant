@@ -12,6 +12,7 @@ interface Props {
   currentTime: number;
   filter?: string;
   reading?: boolean;
+  follow?: boolean;
   onSeek: (seconds: number) => void;
 }
 
@@ -26,8 +27,14 @@ function highlight(text: string, quote: string | null) {
   return <>{text.slice(0, at)}<mark>{text.slice(at, end)}</mark>{text.slice(end)}</>;
 }
 
-export function Transcript({ segments, requirements, linkedSegment, quote, currentTime, filter, reading, onSeek }: Props) {
+export function Transcript({ segments, requirements, linkedSegment, quote, currentTime, filter, reading, follow, onSeek }: Props) {
   const linkedRef = useRef<HTMLDivElement>(null);
+  const playingRef = useRef<HTMLDivElement>(null);
+  const playingId = segments.find((s) => currentTime >= s.start && currentTime < s.end)?.id;
+
+  useEffect(() => {
+    if (follow) playingRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [follow, playingId]);
 
   const refs = useMemo(() => {
     const map = new Map<number, string[]>();
@@ -56,16 +63,18 @@ export function Transcript({ segments, requirements, linkedSegment, quote, curre
         const playing = currentTime >= s.start && currentTime < s.end;
         const prev = shown[i - 1];
         const gap = prev && s.start - prev.end > 20;
+        const reason = (s as Segment & { reason?: string }).reason;
         return (
           <Fragment key={s.id}>
             {gap && <div className="faint" style={{ fontSize: 12, padding: "4px 20px 4px 88px" }}>{clock(s.start - prev.end)} pause</div>}
-            <div ref={linked ? linkedRef : undefined}
-              className={`line ${linked ? "is-linked" : ""} ${playing ? "is-playing" : ""}`}
-              onClick={() => onSeek(s.start)} title="Play from here">
+            <div ref={linked ? linkedRef : playing ? playingRef : undefined}
+              className={`line ${linked ? "is-linked" : ""} ${playing ? "is-playing" : ""} ${reason ? "is-dropped" : ""}`}
+              onClick={() => onSeek(s.start)} title={reason ? `Filtered out: ${reason}` : "Play from here"}>
               <span className="line-time num">{clock(s.start)}</span>
               <span className={`line-speaker ${s.source}`}>{SPEAKER[s.source] ?? s.source}</span>
               <span className="line-text">
                 {linked ? highlight(s.text, quote) : s.text}
+                {reason && <span className="drop-reason">{reason}</span>}
                 {refs.get(s.id) && (
                   <span className="line-refs">{refs.get(s.id)!.map((id) => <span key={id} className="ref">{id}</span>)}</span>
                 )}

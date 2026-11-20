@@ -1,4 +1,4 @@
-import type { RecordingStatus, Requirement, SessionDetail, SessionSummary } from "./types";
+import type { ProcessMode, RecordingStatus, Requirement, SessionDetail, SessionSummary } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -25,15 +25,21 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  process: (id: string, retranscribe = false) =>
+  process: (id: string, mode: ProcessMode = "full") =>
     request(`/api/sessions/${encodeURIComponent(id)}/process`, {
       method: "POST",
-      body: JSON.stringify({ retranscribe }),
+      body: JSON.stringify({ mode }),
     }),
-  startRecording: (name: string, source: "both" | "mic", consent: string) =>
+  transcriptUrl: (id: string) => `/api/sessions/${encodeURIComponent(id)}/transcript.md`,
+  startRecording: (name: string, source: "both" | "mic", consent: string, vocabulary: string) =>
     request<{ session_id: string }>("/api/recording", {
       method: "POST",
-      body: JSON.stringify({ name, source, consent }),
+      body: JSON.stringify({ name, source, consent, vocabulary }),
+    }),
+  updateSession: (id: string, body: { vocabulary?: string; name?: string }) =>
+    request<SessionSummary>(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
     }),
   recording: () => request<RecordingStatus>("/api/recording"),
   stopRecording: () => request("/api/recording", { method: "DELETE" }),

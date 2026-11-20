@@ -1,7 +1,14 @@
 import type { SessionDetail } from "../types";
 import { TYPES, TYPE_ORDER, duration } from "../format";
+import { SessionSummary } from "./SessionSummary";
 
-export function Summary({ session }: { session: SessionDetail }) {
+interface Props {
+  session: SessionDetail;
+  busy: boolean;
+  onWriteSummary: () => void;
+}
+
+export function Summary({ session, busy, onWriteSummary }: Props) {
   const reqs = session.requirements;
   const c = session.counts;
   const reviewed = c.accepted + c.rejected;
@@ -16,7 +23,9 @@ export function Summary({ session }: { session: SessionDetail }) {
 
   return (
     <div className="summary">
-      <div className="stats">
+      <SessionSummary summary={session.summary} busy={busy} onWrite={onWriteSummary}
+        canWrite={session.requirements.length > 0} />
+      <div className="stats" style={{ marginTop: 20 }}>
         <div className="stat">
           <div className="stat-label">Items found</div>
           <div className="stat-value">{c.total}</div>
@@ -74,7 +83,7 @@ export function Summary({ session }: { session: SessionDetail }) {
           </div>
         </div>
 
-        <div className="card">
+        {!session.summary && <div className="card">
           <div className="card-head">Pain points <span className="count">{pains.length}</span></div>
           <div className="card-body">
             <ul className="plain-list">
@@ -82,9 +91,9 @@ export function Summary({ session }: { session: SessionDetail }) {
               {!pains.length && <li className="faint">None recorded.</li>}
             </ul>
           </div>
-        </div>
+        </div>}
 
-        <div className="card">
+        {!session.summary && <div className="card">
           <div className="card-head">Follow up next time <span className="count">{questions.length}</span></div>
           <div className="card-body">
             <ul className="plain-list">
@@ -92,7 +101,7 @@ export function Summary({ session }: { session: SessionDetail }) {
               {!questions.length && <li className="faint">No open questions.</li>}
             </ul>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

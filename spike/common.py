@@ -12,6 +12,26 @@ from pathlib import Path
 import numpy as np
 import psutil
 
+def _find_ffmpeg() -> str:
+    """FFmpeg installed by winget is not always on PATH for processes started by other programs,
+    so look in the usual places as well."""
+    import os
+    import shutil
+
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    candidates = [Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links" / "ffmpeg.exe"]
+    packages = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+    if packages.exists():
+        candidates += sorted(packages.glob("Gyan.FFmpeg*/**/bin/ffmpeg.exe"))
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return "ffmpeg"
+
+
+FFMPEG = _find_ffmpeg()
 ROOT = Path(__file__).parent
 AUDIO_DIR = ROOT / "audio"
 RESULTS_DIR = ROOT / "results"
@@ -21,7 +41,7 @@ SAMPLE_RATE = 16_000
 def load_audio(path: Path) -> np.ndarray:
     """Decode any audio/video file to 16 kHz mono float32 using FFmpeg."""
     cmd = [
-        "ffmpeg", "-nostdin", "-loglevel", "error", "-i", str(path),
+        FFMPEG, "-nostdin", "-loglevel", "error", "-i", str(path),
         "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-",
     ]
     out = subprocess.run(cmd, capture_output=True, check=True).stdout
@@ -34,7 +54,7 @@ def normalize_to_wav(path: Path) -> Path:
     out = RESULTS_DIR / f"{path.stem}.16k.wav"
     if not out.exists():
         subprocess.run(
-            ["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-i", str(path),
+            [FFMPEG, "-nostdin", "-loglevel", "error", "-y", "-i", str(path),
              "-ac", "1", "-ar", str(SAMPLE_RATE), str(out)],
             check=True,
         )

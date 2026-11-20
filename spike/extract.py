@@ -50,6 +50,9 @@ class Candidate(BaseModel):
 
 
 class Extraction(BaseModel):
+    # summary comes first so the model reads the whole excerpt before listing items
+    summary: str = Field("", description="3 to 5 plain sentences on what this part of the conversation "
+                                         "covered: topics, facts given, problems raised. No bullet points.")
     candidates: list[Candidate]
 
 
@@ -72,7 +75,8 @@ Rules:
 - Interviews about daily operations are mostly current_process and pain_point. Capture them all: they are
   where future requirements come from.
 - Ignore greetings, small talk and the interviewer's own questions unless the stakeholder confirms them.
-- If nothing relevant is present, return an empty list."""
+- If nothing relevant is present, return an empty list.
+- Also write "summary": a short factual summary of this excerpt in plain sentences."""
 
 VAGUE = re.compile(
     r"\b(fast|quick(ly)?|easy|easily|user[- ]friendly|simple|intuitive|efficient|flexible|robust|"
